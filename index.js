@@ -15,10 +15,17 @@ app.use(express.json({ limit: '4mb' }));
 const PORT = process.env.PORT || 10000;
 const MCP_SECRET = process.env.MCP_SECRET || '';
 
+// Le secret genere par Render est encode en base64 et peut se terminer par
+// un ou plusieurs '='. Certains clients normalisent les URL et perdent ce
+// remplissage, on compare donc sans lui, des deux cotes.
+function normalizeSecret(value) {
+  return String(value).replace(/=+$/, '');
+}
+
 function secretMatches(candidate) {
   if (!MCP_SECRET || !candidate) return false;
-  const a = Buffer.from(String(candidate));
-  const b = Buffer.from(MCP_SECRET);
+  const a = Buffer.from(normalizeSecret(candidate));
+  const b = Buffer.from(normalizeSecret(MCP_SECRET));
   if (a.length !== b.length) return false;
   return crypto.timingSafeEqual(a, b);
 }
