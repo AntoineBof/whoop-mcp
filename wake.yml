@@ -1,0 +1,52 @@
+# Reveil matinal du service Render gratuit.
+#
+# Une instance gratuite se met en veille apres 15 minutes d'inactivite et
+# met environ une minute a repondre au reveil. Ce workflow appelle la sonde
+# /healthz a 7h50, heure de Paris, pour que le service soit deja chaud a
+# la premiere question de la journee.
+#
+# GitHub Actions ne planifie qu'en UTC. Les deux horaires ci-dessous
+# couvrent l'heure d'hiver (UTC+1) et l'heure d'ete (UTC+2) ; une etape de
+# garde verifie l'heure de Paris et n'en laisse passer qu'un seul.
+
+name: Reveil matinal
+
+on:
+  schedule:
+    - cron: "50 6 * * *" # 7h50 a Paris en heure d'hiver
+    - cron: "50 5 * * *" # 7h50 a Paris en heure d'ete
+  workflow_dispatch:
+
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verifier l'heure de Paris
+        id: guard
+        run: |
+          paris=$(TZ=Europe/Paris date +%H:%M)
+          echo "Heure de Paris : $paris"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          elif [ "${paris%:*}" = "07" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Mauvais creneau pour la saison, on ne fait rien."
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Appeler la sonde de sante
+        if: steps.guard.outputs.run == 'true'
+        env:
+          HEALTH_URL: ${{ secrets.HEALTH_URL }}
+        run: |
+          if [ -z "$HEALTH_URL" ]; then
+            echo "Le secret HEALTH_URL n'est pas configure sur le depot." >&2
+            exit 1
+          fi
+          # Le reveil prend environ une minute : on laisse du temps et on retente.
+          curl --fail --silent --show-error \
+               --max-time 180 \
+               --retry 6 --retry-delay 20 --retry-all-errors \
+               "$HEALTH_URL"
+          echo

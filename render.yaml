@@ -1,0 +1,48 @@
+# Blueprint Render. Palier gratuit, aucun disque persistant.
+# Les secrets sont marques sync: false : Render les demande au deploiement
+# et ils ne sont jamais ecrits dans le depot.
+
+services:
+  # Stockage durable du refresh token Whoop, qui tourne a chaque
+  # rafraichissement. Reseau prive uniquement (ipAllowList vide) et
+  # politique noeviction pour que la cle ne soit jamais evincee.
+  - type: keyvalue
+    name: whoop-mcp-kv
+    plan: free
+    region: frankfurt
+    maxmemoryPolicy: noeviction
+    ipAllowList: []
+
+  - type: web
+    name: whoop-mcp
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Connexion privee au Key Value ci-dessus, injectee par Render.
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: whoop-mcp-kv
+          property: connectionString
+      # Secret qui protege l'endpoint MCP et le flux OAuth.
+      - key: MCP_SECRET
+        generateValue: true
+      # Identifiants de l'app Whoop, a saisir au deploiement.
+      - key: WHOOP_CLIENT_ID
+        sync: false
+      - key: WHOOP_CLIENT_SECRET
+        sync: false
+      # URL publique du service, sans slash final.
+      - key: PUBLIC_BASE_URL
+        sync: false
+
+# Note : les cron jobs Render sont un service payant (environ 1 $ par mois
+# minimum) et planifies en UTC. Le reveil matinal passe donc par GitHub
+# Actions, voir .github/workflows/wake.yml dans le depot.
